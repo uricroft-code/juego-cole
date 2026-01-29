@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<title>Juego Provincias de España</title>
+ 
+  <!-- Leaflet CSS (librería de mapas) -->
+<link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+    crossorigin=""
+  />
+ 
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+ 
+    body {
+      background: #f4f6fb;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 20px;
+      color: #222;
+    }
+ 
+    h1 {
+      margin-bottom: 10px;
+      text-align: center;
+    }
+ 
+    .game-container {
+      width: 100%;
+      max-width: 1000px;
+      background: #ffffff;
+      border-radius: 16px;
+      box-shadow: 0 8px 20px rgba(0, 0, 0, 0.08);
+      padding: 16px;
+    }
+ 
+    .top-bar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+ 
+    .question {
+      font-size: 1.1rem;
+      font-weight: 600;
+    }
+ 
+    .question span {
+      color: #1e88e5;
+    }
+ 
+    .score {
+      font-size: 0.95rem;
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: #e3f2fd;
+      color: #1565c0;
+    }
+ 
+    .controls {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+ 
+    button {
+      border: none;
+      border-radius: 999px;
+      padding: 8px 14px;
+      font-size: 0.9rem;
+      cursor: pointer;
+      background: #1e88e5;
+      color: #fff;
+      font-weight: 600;
+      transition: transform 0.08s ease, box-shadow 0.08s ease, background 0.12s ease;
+    }
+ 
+    button:hover {
+      background: #1565c0;
+      box-shadow: 0 3px 8px rgba(21, 101, 192, 0.3);
+      transform: translateY(-1px);
+    }
+ 
+    #map {
+      width: 100%;
+      height: 600px;
+      border-radius: 12px;
+      overflow: hidden;
+      margin-bottom: 10px;
+    }
+ 
+    .feedback {
+      min-height: 24px;
+      font-size: 0.95rem;
+      font-weight: 500;
+    }
+ 
+    .feedback.ok {
+      color: #2e7d32;
+    }
+ 
+    .feedback.error {
+      color: #c62828;
+    }
+ 
+    @media (max-width: 768px) {
+      #map {
+        height: 450px;
+      }
+    }
+</style>
+</head>
+<body>
+<h1>Juego: Provincias de España</h1>
+<div class="game-container">
+<div class="top-bar">
+<div class="question">
+        Haz clic en la provincia: <span id="targetProvince">Cargando...</span>
+</div>
+<div class="controls">
+<span class="score">Aciertos: <span id="score">0</span></span>
+<button id="btnSkip">Cambiar provincia</button>
+<button id="btnResetColors">Reset colores</button>
+</div>
+</div>
+ 
+    <div id="map"></div>
+ 
+    <div id="feedback" class="feedback"></div>
+</div>
+ 
+  <!-- Leaflet JS -->
+<script
+    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+    crossorigin=""
+></script>
+ 
+  <script>
+    // 🔹 Crear el mapa centrado en España
+    const map = L.map("map", {
+      zoomSnap: 0.25,
+      zoomDelta: 0.5
+    }).setView([40.0, -3.7], 5.5);
+ 
+    // Fondo gris clarito para que se vea bonito y limpio
+    L.tileLayer("", {
+      attribution: ""
+    });
+ 
+    // Solo color de fondo del div
+    document.getElementById("map").style.background = "#e3f2fd";
+ 
+    // 🔹 URL GeoJSON de provincias de España
+    const GEOJSON_URL =
+      "https://raw.githubusercontent.com/codeforgermany/click_that_hood/main/public/data/spain-provinces.geojson%22;
+ 
+    let provincesLayer = null;
+    let provincesList = [];
+    let currentTarget = null;
+    let score = 0;
+ 
+    const targetSpan = document.getElementById("targetProvince");
+    const feedbackDiv = document.getElementById("feedback");
+    const scoreSpan = document.getElementById("score");
+    const btnSkip = document.getElementById("btnSkip");
+    const btnResetColors = document.getElementById("btnResetColors");
+ 
+    // Función para sacar el nombre de la provincia sin importar el campo exacto
+    function getProvinceName(feature) {
+      const props = feature.properties || {};
+      return (
+        props.name ||
+        props.NAME ||
+        props.province ||
+        props.Provincia ||
+        props.provincia ||
+        "Provincia"
+      );
+    }
+ 
+    // Estilo por defecto de cada provincia
+    function defaultStyle() {
+      return {
+        color: "#ffffff",
+        weight: 1,
+        fillColor: "#90caf9",
+        fillOpacity: 0.7
+      };
+    }
+ 
+    // Estilo para hover
+    function hoverStyle() {
+      return {
+        weight: 2,
+        color: "#0d47a1",
+        fillColor: "#64b5f6",
+        fillOpacity: 0.9
+      };
+    }
+ 
+    // Estilo para acierto
+    function correctStyle() {
+      return {
+        color: "#1b5e20",
+        weight: 2,
+        fillColor: "#66bb6a",
+        fillOpacity: 0.9
+      };
+    }
+ 
+    // Estilo para error momentáneo
+    function wrongStyle() {
+      return {
+        color: "#b71c1c",
+        weight: 2,
+        fillColor: "#ef9a9a",
+        fillOpacity: 0.9
+      };
+    }
+ 
+    // Elegir una nueva provincia objetivo
+    function chooseNewTarget() {
+      if (!provincesList.length) return;
+      const randomIndex = Math.floor(Math.random() * provincesList.length);
+      currentTarget = provincesList[randomIndex];
+      targetSpan.textContent = currentTarget;
+      feedbackDiv.textContent = "";
+      feedbackDiv.className = "feedback";
+    }
+ 
+    // Resetear colores de todas las provincias al estilo por defecto
+    function resetAllStyles() {
+      if (!provincesLayer) return;
+      provincesLayer.eachLayer(layer => {
+        provincesLayer.resetStyle(layer);
+      });
+      feedbackDiv.textContent = "";
+      feedbackDiv.className = "feedback";
+    }
+ 
+    // Comprobar si la provincia pulsada es la correcta
+    function checkAnswer(clickedName, layer) {
+      if (!currentTarget) return;
+ 
+      const normalizedClicked = clickedName.toLowerCase();
+      const normalizedTarget = currentTarget.toLowerCase();
+ 
+      if (normalizedClicked === normalizedTarget) {
+        // ACIERTO
+        layer.setStyle(correctStyle());
+        feedbackDiv.textContent = "¡Muy bien! Has acertado " + clickedName + " 🎉";
+        feedbackDiv.className = "feedback ok";
+        score += 1;
+        scoreSpan.textContent = score;
+ 
+        // Elegir otra provincia después de un pequeño delay
+        setTimeout(() => {
+          resetAllStyles();
+          chooseNewTarget();
+        }, 1000);
+      } else {
+        // ERROR
+        const originalStyle = defaultStyle();
+        layer.setStyle(wrongStyle());
+        feedbackDiv.textContent =
+          "Uy, no. Has elegido " + clickedName + ". Inténtalo otra vez 🙂";
+        feedbackDiv.className = "feedback error";
+ 
+        // Volver al estilo original después de un momento
+        setTimeout(() => {
+          // Solo si no ha sido acertada entre medias
+          provincesLayer.resetStyle(layer);
+        }, 800);
+      }
+    }
+ 
+    // Cargar GeoJSON y montar el juego
+    fetch(GEOJSON_URL)
+      .then(response => {
+        if (!response.ok) {
+          throw new Error("No se pudo cargar el GeoJSON de provincias.");
+        }
+        return response.json();
+      })
+      .then(data => {
+        provincesList = data.features.map(f => getProvinceName(f));
+ 
+        provincesLayer = L.geoJSON(data, {
+          style: defaultStyle,
+          onEachFeature: (feature, layer) => {
+            const name = getProvinceName(feature);
+ 
+            // Tooltip al pasar el ratón
+            layer.bindTooltip(name, {
+              direction: "auto",
+              sticky: true
+            });
+ 
+            // Eventos de interacción
+            layer.on("mouseover", function () {
+              if (
+                feedbackDiv.classList.contains("ok") &&
+                targetSpan.textContent === name
+              ) {
+                // si justo acabamos de acertar esa, no cambiar
+                return;
+              }
+              layer.setStyle(hoverStyle());
+            });
+ 
+            layer.on("mouseout", function () {
+              provincesLayer.resetStyle(layer);
+            });
+ 
+            layer.on("click", function () {
+              checkAnswer(name, layer);
+            });
+          }
+        }).addTo(map);
+ 
+        // Ajustar vista al contorno de España
+        map.fitBounds(provincesLayer.getBounds());
+ 
+        // Empezar el juego
+        chooseNewTarget();
+      })
+      .catch(err => {
+        console.error(err);
+        targetSpan.textContent = "Error cargando el mapa";
+        feedbackDiv.textContent =
+          "Ha habido un problema cargando el mapa. Revisa tu conexión a Internet.";
+        feedbackDiv.className = "feedback error";
+      });
+ 
+    // Botón "Cambiar provincia"
+    btnSkip.addEventListener("click", () => {
+      chooseNewTarget();
+    });
+ 
+    // Botón "Reset colores"
+    btnResetColors.addEventListener("click", () => {
+      resetAllStyles();
+    });
+</script>
+</body>
+</html>
